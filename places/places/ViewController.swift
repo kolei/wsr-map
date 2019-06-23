@@ -10,16 +10,20 @@ import UIKit
 import MapKit
 import CoreLocation
 
+struct place {
+    var title: String
+    var desc: String
+    var coord: CLLocationCoordinate2D
+}
+
 class Artwork: NSObject, MKAnnotation {
     let title: String?
     let locationName: String
-    let discipline: String
     let coordinate: CLLocationCoordinate2D
     
-    init(title: String, locationName: String, discipline: String, coordinate: CLLocationCoordinate2D) {
+    init(title: String, locationName: String, coordinate: CLLocationCoordinate2D) {
         self.title = title
         self.locationName = locationName
-        self.discipline = discipline
         self.coordinate = coordinate
         
         super.init()
@@ -32,7 +36,13 @@ class Artwork: NSObject, MKAnnotation {
 
 class ViewController: UIViewController, MKMapViewDelegate, CLLocationManagerDelegate {
     let locationManager = CLLocationManager()
-
+    let places:  [place] = [
+        place(title: "big ban", desc: "desc",
+              coord: CLLocationCoordinate2D(latitude: 51.50007773, longitude: -0.1246402)),
+        place(title: "big ban 2", desc: "desc 2",
+              coord: CLLocationCoordinate2D(latitude: 51.40007773, longitude: -0.2246402))
+    ]
+    
     @IBOutlet weak var mapView: MKMapView!
     
     override func viewDidLoad() {
@@ -61,12 +71,17 @@ class ViewController: UIViewController, MKMapViewDelegate, CLLocationManagerDele
         mapView.setRegion(region, animated: true)
         
         //3
-        let annotation = Artwork(title: "Big Ben",
-                                 locationName: "Главная достопримечательность Лондона",
-                                 discipline: "Building",
-                                 coordinate: location)
+//        let annotation = Artwork(title: "Big Ben",
+//                                 locationName: "Главная достопримечательность Лондона",
+//                                 coordinate: location)
+//
         
-        mapView.addAnnotation(annotation)
+        for  p in places {
+            let annotation = Artwork(title: p.title,
+                                     locationName: p.desc,
+                                     coordinate: p.coord)
+            mapView.addAnnotation(annotation)
+        }
     }
 
     internal func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
@@ -84,37 +99,27 @@ class ViewController: UIViewController, MKMapViewDelegate, CLLocationManagerDele
             view = dequeuedView
         } else {
             // 5
-//            view = MKMarkerAnnotationView(frame: CGRect(origin: CGPoint.zero,
-//                                                        size: CGSize(width: 400, height: 300)))
-//            view.annotation = annotation
-//            view.canShowCallout = true
-//            view.calloutOffset = CGPoint(x: -5, y: 5)
-//
-//
-//            let mapsButton = UIButton(frame: CGRect(origin: CGPoint.zero,
-//                                                    size: CGSize(width: 200, height: 200)))
-//
-//            mapsButton.setBackgroundImage(UIImage(named: "bigban"), for: UIControl.State())
-//            view.rightCalloutAccessoryView = mapsButton
-//
-//
-//            let detailLabel = UILabel(frame: CGRect(x: 0, y: 0, width: 200, height: 400))
-//            detailLabel.numberOfLines = 0
-//            detailLabel.font = detailLabel.font.withSize(12)
-//            detailLabel.text = annotation.subtitle! + "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
-//            view.detailCalloutAccessoryView = detailLabel
-        
-            view = MKMarkerAnnotationView(annotation: annotation, reuseIdentifier: "marker")
+            view = MKMarkerAnnotationView(frame: CGRect(origin: CGPoint.zero,
+                                                        size: CGSize(width: 400, height: 300)))
+            view.annotation = annotation
             view.canShowCallout = true
-            view.calloutOffset = CGPoint(x: -150, y: 5)
-            
-            let xib = Bundle.main.loadNibNamed("AnnotationView", owner: self, options: nil)?.first as! AnnotationView
-            xib.imageView.image = UIImage(named: "bigban")
-            xib.title.text = annotation.title!
-            
-            //view.addSubview(xib)
-            view.detailCalloutAccessoryView = xib
-            
+            view.calloutOffset = CGPoint(x: -5, y: 5)
+
+
+            let mapsButton = UIButton(frame: CGRect(origin: CGPoint.zero,
+                                                    size: CGSize(width: 200, height: 200)))
+
+            mapsButton.setBackgroundImage(UIImage(named: "bigban"), for: UIControl.State())
+            view.rightCalloutAccessoryView = mapsButton
+
+
+            let detailLabel = UILabel(frame: CGRect(x: 0, y: 0, width: 200, height: 400))
+            detailLabel.numberOfLines = 0
+            detailLabel.font = detailLabel.font.withSize(12)
+            detailLabel.heightAnchor.constraint(equalToConstant: 200).isActive = true
+            detailLabel.text = annotation.subtitle
+            view.detailCalloutAccessoryView = detailLabel
+        
             view.glyphText = "🚗"
             view.markerTintColor = .blue
         }
