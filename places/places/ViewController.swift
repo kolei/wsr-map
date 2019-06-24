@@ -9,6 +9,8 @@
 import UIKit
 import MapKit
 import CoreLocation
+import Alamofire
+import SwiftyJSON
 
 /*
 
@@ -31,15 +33,14 @@ class Artwork: NSObject, MKAnnotation {
     let locationName: String
     let coordinate: CLLocationCoordinate2D
     let imgName: String
-    let tag: Int
     
     // конструтор (описывает какие параметры нужны классу при создании)
-    init(title: String, locationName: String, coordinate: CLLocationCoordinate2D, imgName: String, tag: Int) {
+    init(title: String, locationName: String, coordinate: CLLocationCoordinate2D, imgName: String) {
         self.title = title
         self.locationName = locationName
         self.coordinate = coordinate
         self.imgName = imgName
-        self.tag = tag
+        
         super.init()
     }
     
@@ -50,18 +51,6 @@ class Artwork: NSObject, MKAnnotation {
 
 class ViewController: UIViewController, MKMapViewDelegate, CLLocationManagerDelegate {
     let locationManager = CLLocationManager()
-
-    // массив достропримечательностей (в реальной жизни мы их должны получать откуда-то извне)
-    let places:  [place] = [
-        place(title: "big ban", 
-              desc: "desc",
-              coord: CLLocationCoordinate2D(latitude: 51.50007773, longitude: -0.1246402),
-              imgName: "bigban"),
-        place(title: "city",
-              desc: "desc 2",
-              coord: CLLocationCoordinate2D(latitude: 51.40007773, longitude: -0.2246402),
-              imgName: "city")
-    ]
     
     @IBOutlet weak var mapView: MKMapView!
     
@@ -80,32 +69,56 @@ class ViewController: UIViewController, MKMapViewDelegate, CLLocationManagerDele
             locationManager.delegate = self
             let location = mapView.userLocation
             location.title = "Я здесь"
+            
+            // загружаем список достопримечательностей с сервера
+            loadArts()
         } else {
             locationManager.requestAlwaysAuthorization()
         }
-     
-        // задаем кординату центра для карты (по идее можно использовать mapView.userLocation, но я все
-        // достопримечательности расположил рядом с этими координатами)
-        let location = CLLocationCoordinate2D(latitude: 51.50007773,
-                                              longitude: -0.1246402)
-        
-        // задаем на карте область просмотра
-        let span = MKCoordinateSpan(latitudeDelta: 0.2, longitudeDelta: 0.2)
-        let region = MKCoordinateRegion(center: location, span: span)
-        mapView.setRegion(region, animated: true)
-        
-        // добвляем на карту наши достопримечательности
-        for (i,p) in places.enumerated() {
-            let aw = Artwork(title: p.title,
-                             locationName: p.desc,
-                             coordinate: p.coord,
-                             imgName: p.imgName,
-                             tag: i)
-            
-            mapView.addAnnotation( aw )
-        }
     }
 
+    // при включении CLLocationManager перехватываем управление и запрашиваем текущую позицию
+    override func viewWillAppear(_ animated: Bool) {
+        if CLLocationManager.locationServicesEnabled() {
+            locationManager.delegate = self
+            locationManager.desiredAccuracy = kCLLocationAccuracyBest
+            locationManager.startUpdatingLocation()
+        }
+     }
+
+    // регион для отображения задаем при обновлении текущей локации
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        self.locationManager.stopUpdatingLocation()
+        let radius = CLLocationDistance(10000)
+        let region = MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: locations[0].coordinate.latitude, longitude: locations[0].coordinate.longitude), latitudinalMeters: radius, longitudinalMeters: radius)
+        self.mapView.setRegion(region, animated: false)
+    }
+
+    //грузим достопримечательности с сервера
+    func loadArts(){
+        let url = "http://cars.areas.su/arts"
+        // посылаем запрос
+        Alamofire.request(url).validate().responseJSON { response in
+            switch response.result {
+            case .success(let value):
+                //если запрос выполнен успешно, то разбираем ответ и вытаскиваем нужные данные
+                let json = JSON(value)
+                
+                for item in json.arrayValue {
+                    let aw = Artwork(title: item["title"].stringValue,
+                                     locationName: item["subTitle"].stringValue,
+                                     coordinate: CLLocationCoordinate2D(latitude: item["lat"].doubleValue, longitude: item["long"].doubleValue),
+                                     imgName: item["image"].stringValue)
+                    
+                    self.mapView.addAnnotation( aw )
+                }
+                
+            case .failure(let error):
+                print(error)
+            }
+        }
+    }
+    
     // функция вызывается для каждой показываемой точки
     internal func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
         
@@ -142,12 +155,18 @@ class ViewController: UIViewController, MKMapViewDelegate, CLLocationManagerDele
             // (тут опять же нужно бы грузить изображение с сервера, пока берется одно, вложенное в проект)
             let mapsButton = UIButton(  frame: CGRect(origin: CGPoint.zero,
                                         size: CGSize(width: 200, height: 200)))
-            //mapsButton.title = "annotation.imgName"
-            mapsButton.setBackgroundImage(UIImage(named: annotation.imgName), for: UIControl.State())
-            mapsButton.tag = annotation.tag
             
-            // добавляем событие для нашей кнопки
-            mapsButton.addTarget(self, action: #selector(buttonClicked(_:)), for: .touchUpInside)
+            // в имени картинки могут быть русские буквы - перекодируем
+            let urlStr = annotation.imgName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)
+            
+            if let url = URL(string: urlStr!) {
+                if let data = try? Data(contentsOf: url){
+                    mapsButton.setBackgroundImage( UIImage(data: data), for: UIControl.State())
+                }
+            }
+            
+            // добавляем событие для нашей кнопки - вернулся к классическому варианту
+            //mapsButton.addTarget(self, action: #selector(buttonClicked(_:)), for: .touchUpInside)
 
             
             view.rightCalloutAccessoryView = mapsButton
@@ -172,31 +191,29 @@ class ViewController: UIViewController, MKMapViewDelegate, CLLocationManagerDele
         
     }
     
-//    func mapView(_ mapView: MKMapView, annotationView view: MKAnnotationView,
-//                 calloutAccessoryControlTapped control: UIControl) {
-//        let location = view.annotation as! Artwork
-//        let launchOptions = [MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDriving]
-//        location.mapItem().openInMaps(launchOptions: launchOptions)
-//    }
-    
-    // событие возникает при клике на картинку в детальном описании геометки
-    @objc func buttonClicked(_ sender: UIButton) {
+    // обработка события клика по детальной информации - строим маршрут от пользователя к выбранной точке
+    func mapView(_ mapView: MKMapView, annotationView view: MKAnnotationView,
+                 calloutAccessoryControlTapped control: UIControl) {
+        let location = view.annotation as! Artwork
+        
+        
+        //очищаю старые пути
         self.mapView.removeOverlays(self.mapView.overlays)
         
         let srcCoord = mapView.userLocation.coordinate,
-            targetCoord = places[sender.tag].coord
+            targetCoord = location.coordinate
         
         let src = MKPlacemark(coordinate: srcCoord),
             target = MKPlacemark(coordinate: targetCoord)
-
+        
         let req = MKDirections.Request()
-
+        
         req.source = MKMapItem(placemark: src)
         req.destination = MKMapItem(placemark: target)
         req.transportType = .walking
-
+        
         let direction = MKDirections(request: req)
-
+        
         direction.calculate{
             (response, error) in
             guard let directionResonse = response else {
@@ -214,6 +231,11 @@ class ViewController: UIViewController, MKMapViewDelegate, CLLocationManagerDele
         }
     }
     
+//    // событие возникает при клике на картинку в детальном описании геометки - убрал
+//    @objc func buttonClicked(_ sender: UIButton) {
+//
+//    }
+    
     // срабатывает при добавлении оверлея
     func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
         let render = MKPolylineRenderer(overlay: overlay)
@@ -223,11 +245,8 @@ class ViewController: UIViewController, MKMapViewDelegate, CLLocationManagerDele
         
     }
     
-    
-
-    
     // этой функцией можно получить событие клика по геометке
-    // но так как по клику у нас показывается доп. информация, то используется другой принцип
+    // но так как по клику у нас показывается доп. информация, то используется другой метод
 //    func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
 //        print(view.annotation?.title!! ?? "unknown")
 //    }
