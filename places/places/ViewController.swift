@@ -22,6 +22,7 @@ struct place {
     var title: String
     var desc: String
     var coord: CLLocationCoordinate2D
+    var imgName: String
 }
 
 // класс, потомок MKAnnotation, практически цельнотянут из туториала, только убрал одно поле
@@ -29,13 +30,16 @@ class Artwork: NSObject, MKAnnotation {
     let title: String?
     let locationName: String
     let coordinate: CLLocationCoordinate2D
+    let imgName: String
+    let tag: Int
     
     // конструтор (описывает какие параметры нужны классу при создании)
-    init(title: String, locationName: String, coordinate: CLLocationCoordinate2D) {
+    init(title: String, locationName: String, coordinate: CLLocationCoordinate2D, imgName: String, tag: Int) {
         self.title = title
         self.locationName = locationName
         self.coordinate = coordinate
-        
+        self.imgName = imgName
+        self.tag = tag
         super.init()
     }
     
@@ -51,10 +55,12 @@ class ViewController: UIViewController, MKMapViewDelegate, CLLocationManagerDele
     let places:  [place] = [
         place(title: "big ban", 
               desc: "desc",
-              coord: CLLocationCoordinate2D(latitude: 51.50007773, longitude: -0.1246402)),
-        place(title: "big ban 2", 
+              coord: CLLocationCoordinate2D(latitude: 51.50007773, longitude: -0.1246402),
+              imgName: "bigban"),
+        place(title: "city",
               desc: "desc 2",
-              coord: CLLocationCoordinate2D(latitude: 51.40007773, longitude: -0.2246402))
+              coord: CLLocationCoordinate2D(latitude: 51.40007773, longitude: -0.2246402),
+              imgName: "city")
     ]
     
     @IBOutlet weak var mapView: MKMapView!
@@ -84,16 +90,19 @@ class ViewController: UIViewController, MKMapViewDelegate, CLLocationManagerDele
                                               longitude: -0.1246402)
         
         // задаем на карте область просмотра
-        let span = MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
+        let span = MKCoordinateSpan(latitudeDelta: 0.2, longitudeDelta: 0.2)
         let region = MKCoordinateRegion(center: location, span: span)
         mapView.setRegion(region, animated: true)
         
         // добвляем на карту наши достопримечательности
-        for p in places {
-            mapView.addAnnotation(
-                Artwork(title: p.title,
-                        locationName: p.desc,
-                        coordinate: p.coord))
+        for (i,p) in places.enumerated() {
+            let aw = Artwork(title: p.title,
+                             locationName: p.desc,
+                             coordinate: p.coord,
+                             imgName: p.imgName,
+                             tag: i)
+            
+            mapView.addAnnotation( aw )
         }
     }
 
@@ -123,6 +132,7 @@ class ViewController: UIViewController, MKMapViewDelegate, CLLocationManagerDele
 
             // разрешаем показ дополнительной информации
             view.canShowCallout = true
+            view.isDraggable = true
             view.calloutOffset = CGPoint(x: -5, y: 5)
 
             // класс MKMarkerAnnotationView поддерживает отображение 3-х блоков: 
@@ -132,7 +142,14 @@ class ViewController: UIViewController, MKMapViewDelegate, CLLocationManagerDele
             // (тут опять же нужно бы грузить изображение с сервера, пока берется одно, вложенное в проект)
             let mapsButton = UIButton(  frame: CGRect(origin: CGPoint.zero,
                                         size: CGSize(width: 200, height: 200)))
-            mapsButton.setBackgroundImage(UIImage(named: "bigban"), for: UIControl.State())
+            //mapsButton.title = "annotation.imgName"
+            mapsButton.setBackgroundImage(UIImage(named: annotation.imgName), for: UIControl.State())
+            mapsButton.tag = annotation.tag
+            
+            // добавляем событие для нашей кнопки
+            mapsButton.addTarget(self, action: #selector(buttonClicked(_:)), for: .touchUpInside)
+
+            
             view.rightCalloutAccessoryView = mapsButton
 
             // по идее класс MKMarkerAnnotationView отображает title и subtite из нашей метки
@@ -154,5 +171,66 @@ class ViewController: UIViewController, MKMapViewDelegate, CLLocationManagerDele
         return view
         
     }
+    
+//    func mapView(_ mapView: MKMapView, annotationView view: MKAnnotationView,
+//                 calloutAccessoryControlTapped control: UIControl) {
+//        let location = view.annotation as! Artwork
+//        let launchOptions = [MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDriving]
+//        location.mapItem().openInMaps(launchOptions: launchOptions)
+//    }
+    
+    // событие возникает при клике на картинку в детальном описании геометки
+    @objc func buttonClicked(_ sender: UIButton) {
+        self.mapView.removeOverlays(self.mapView.overlays)
+        
+        let srcCoord = mapView.userLocation.coordinate,
+            targetCoord = places[sender.tag].coord
+        
+        let src = MKPlacemark(coordinate: srcCoord),
+            target = MKPlacemark(coordinate: targetCoord)
+
+        let req = MKDirections.Request()
+
+        req.source = MKMapItem(placemark: src)
+        req.destination = MKMapItem(placemark: target)
+        req.transportType = .walking
+
+        let direction = MKDirections(request: req)
+
+        direction.calculate{
+            (response, error) in
+            guard let directionResonse = response else {
+                if let error = error {
+                    print("we have error getting directions==\(error.localizedDescription)")
+                }
+                return
+            }
+            
+            let route = directionResonse.routes[0]
+            self.mapView.addOverlay(route.polyline, level: .aboveRoads)
+            
+            let rect = route.polyline.boundingMapRect
+            self.mapView.setRegion(MKCoordinateRegion(rect), animated: true)
+        }
+    }
+    
+    // срабатывает при добавлении оверлея
+    func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
+        let render = MKPolylineRenderer(overlay: overlay)
+        render.strokeColor = UIColor.blue
+        render.lineWidth = 4.0
+        return render
+        
+    }
+    
+    
+
+    
+    // этой функцией можно получить событие клика по геометке
+    // но так как по клику у нас показывается доп. информация, то используется другой принцип
+//    func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
+//        print(view.annotation?.title!! ?? "unknown")
+//    }
 }
+
 
